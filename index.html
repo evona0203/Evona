@@ -497,12 +497,13 @@ async function generatePDF() {
     doc.text("ANNEXE PHOTOS", 14, 11);
 
     let px = 14, py = 24;
-    const imgW = 55, imgH = 45;
+    const imgW = 85, imgH = 64;  // photos agrandies ~2× plus grandes
+    const gap = 10;              // espacement entre photos
     pdfPhotos.forEach((p, idx) => {
-      if (px + imgW > W - 10) { px = 14; py += imgH + 8; }
+      if (px + imgW > W - 14) { px = 14; py += imgH + gap; }
       if (py + imgH > 280) { addFooter(doc, labo); doc.addPage(); px = 14; py = 24; }
       doc.setDrawColor(200, 200, 200);
-      doc.roundedRect(px - 1, py - 1, imgW + 2, imgH + 2, 2, 2, 'S');
+      doc.roundedRect(px - 1, py - 1, imgW + 2, imgH + 2, 3, 3, 'S');
       // Format normalisé en JPEG par la fonction normalizeImageForPDF
       let imgFormat = 'JPEG';
       // Si l'image n'a pas été normalisée (fallback), détecter le format original
@@ -510,7 +511,7 @@ async function generatePDF() {
       else if (p.startsWith('data:image/webp')) imgFormat = 'WEBP';
       else if (p.startsWith('data:image/gif')) imgFormat = 'GIF';
       doc.addImage(p, imgFormat, px, py, imgW, imgH);
-      px += imgW + 8;
+      px += imgW + gap;
     });
     addFooter(doc, labo);
   }
