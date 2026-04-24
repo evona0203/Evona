@@ -410,7 +410,7 @@ async function generatePDF() {
       doc.setTextColor(100, 100, 120);
       doc.setFontSize(7.5);
       doc.setFont(undefined, 'italic');
-      const lines = doc.splitTextToSize('↳ ' + res.comment.trim(), W - 40);
+      const lines = doc.splitTextToSize('> ' + res.comment.trim(), W - 40);
       lines.forEach(line => {
         doc.text(line, 30, y);
         y += 5;
@@ -462,7 +462,12 @@ async function generatePDF() {
       if (py + imgH > 280) { addFooter(doc, labo); doc.addPage(); px = 14; py = 24; }
       doc.setDrawColor(200, 200, 200);
       doc.roundedRect(px - 1, py - 1, imgW + 2, imgH + 2, 2, 2, 'S');
-      doc.addImage(p, 'JPEG', px, py, imgW, imgH);
+      // Détection dynamique du format d'image depuis le Data URL
+      let imgFormat = 'JPEG';
+      if (p.startsWith('data:image/png')) imgFormat = 'PNG';
+      else if (p.startsWith('data:image/webp')) imgFormat = 'WEBP';
+      else if (p.startsWith('data:image/gif')) imgFormat = 'GIF';
+      doc.addImage(p, imgFormat, px, py, imgW, imgH);
       px += imgW + 8;
     });
     addFooter(doc, labo);
