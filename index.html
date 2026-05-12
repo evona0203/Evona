@@ -12,6 +12,7 @@
 <meta name="apple-mobile-web-app-title" content="Evona VHF">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/compressorjs/1.1.1/compressor.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -184,8 +185,7 @@ function normalizeImageForPDF(dataUrl) {
     img.onload = function() {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      // Gérer l'orientation EXIF en conservant les dimensions max
-      const maxDim = 1200; // réduction pour éviter les gros fichiers PDF
+      const maxDim = 1200;
       let w = img.width, h = img.height;
       if (w > maxDim || h > maxDim) {
         if (w > h) { h = h * maxDim / w; w = maxDim; }
@@ -193,11 +193,9 @@ function normalizeImageForPDF(dataUrl) {
       }
       canvas.width = w;
       canvas.height = h;
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, w, h);
       ctx.drawImage(img, 0, 0, w, h);
-      // Export en JPEG qualité 0.85 pour compatibilité maximale avec jsPDF
-      resolve(canvas.toDataURL('image/jpeg', 0.85));
+      // Force JPEG format with 80% quality
+      resolve(canvas.toDataURL('image/jpeg', 0.80));
     };
     img.onerror = reject;
     img.src = dataUrl;
@@ -280,7 +278,7 @@ function addPhoto(input) {
 
 async function generatePDF() {
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', compression: true });
 
   // ─── NORMALISATION DES PHOTOS AVANT INSERTION PDF ───
   let pdfPhotos = [];
@@ -510,7 +508,7 @@ async function generatePDF() {
       if (p.startsWith('data:image/png')) imgFormat = 'PNG';
       else if (p.startsWith('data:image/webp')) imgFormat = 'WEBP';
       else if (p.startsWith('data:image/gif')) imgFormat = 'GIF';
-      doc.addImage(p, imgFormat, px, py, imgW, imgH);
+      doc.addImage(p, 'JPEG', px, py, imgW, imgH, undefined, 'SLOW');
       px += imgW + gap;
     });
     addFooter(doc, labo);
