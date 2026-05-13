@@ -134,7 +134,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
       <div class="photo-grid" id="photoGrid">
         <label class="photo-box" for="camInput"><span class="photo-add">+</span></label>
       </div>
-      <input type="file" id="camInput" accept="image/*" style="display:none" onchange="addPhoto(this)">
+      <input type="file" id="camInput" accept="image/*" multiple style="display:none" onchange="addPhoto(this)">
       <div class="field" style="margin-top:15px;">
         <label>Observations finales / Recommandations</label>
         <textarea id="obs" rows="4"></textarea>
@@ -264,7 +264,7 @@ function showPage(p) {
 }
 
 function addPhoto(input) {
-  if (input.files && input.files[0]) {
+  Array.from(input.files).forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
       photos.push(e.target.result);
@@ -272,8 +272,8 @@ function addPhoto(input) {
       box.className = 'photo-box'; box.innerHTML = `<img src="${e.target.result}">`;
       document.getElementById('photoGrid').prepend(box);
     };
-    reader.readAsDataURL(input.files[0]);
-  }
+    reader.readAsDataURL(file);
+  });
 }
 
 async function generatePDF() {
