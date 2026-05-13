@@ -64,6 +64,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
 .photo-box { aspect-ratio: 1; border: 2px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
 .photo-box img { width: 100%; height: 100%; object-fit: cover; }
 .photo-add { color: #999; font-size: 24px; cursor: pointer; }
+.photo-remove { position: absolute; top: 4px; right: 4px; background: rgba(220,38,38,0.85); color: white; border: none; border-radius: 50%; width: 22px; height: 22px; font-size: 14px; cursor: pointer; z-index: 2; line-height: 22px; padding: 0; }
 
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
 .btn-main { padding: 15px; border-radius: 10px; border: none; font-weight: 700; font-size: 15px; cursor: pointer; }
@@ -141,7 +142,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
       </div>
     </div>
     <div class="actions">
-      <button class="btn-main btn-outline" onclick="if(confirm('Tout effacer ?')) location.reload()">Réinitialiser</button>
+      <button class="btn-main btn-outline" onclick="if(confirm('Tout effacer ?')) { localStorage.removeItem('evona_draft'); location.reload(); }">Réinitialiser</button>
       <button class="btn-main btn-blue" onclick="generatePDF()">Exporter PDF</button>
     </div>
   </div>
@@ -215,6 +216,9 @@ function generateRapportNum() {
 
 function init() {
   document.getElementById('rapportNum').value = generateRapportNum();
+  ['labo','tech','sn','broche','obs'].forEach(id => {
+    document.getElementById(id).addEventListener('input', autoSave);
+  });
   const container = document.getElementById('checklistContainer');
   checklistData.forEach((sec, sIdx) => {
     const hdr = document.createElement('div');
@@ -248,9 +252,10 @@ function setStat(id, stat) {
   document.getElementById(`ok-${id}`).className = 'btn-status' + (stat==='ok'?' active-ok':'');
   document.getElementById(`ko-${id}`).className = 'btn-status' + (stat==='ko'?' active-ko':'');
   document.getElementById(`na-${id}`).className = 'btn-status' + (stat==='na'?' active-na':'');
+  autoSave();
 }
 
-function saveComm(id, val) { responses[id].comment = val; }
+function saveComm(id, val) { responses[id].comment = val; autoSave(); }
 
 function showPage(p) {
   document.querySelectorAll('.page').forEach(pg => pg.classList.remove('active'));
@@ -260,20 +265,29 @@ function showPage(p) {
   document.getElementById(pages[p]).classList.add('active');
   document.querySelectorAll('.tab')[tabIdx[p]].classList.add('active');
   if (p === 'hist') renderHistory();
-  window.scrollTo(0,0);
+  window.scrollTo(0, 0);
 }
 
 function addPhoto(input) {
   Array.from(input.files).forEach(file => {
     const reader = new FileReader();
     reader.onload = e => {
-      photos.push(e.target.result);
+      const dataUrl = e.target.result;
+      photos.push(dataUrl);
       const box = document.createElement('div');
-      box.className = 'photo-box'; box.innerHTML = `<img src="${e.target.result}">`;
+      box.className = 'photo-box';
+      box.innerHTML = `<img src="${dataUrl}"><button class="photo-remove" onclick="removePhoto(this)" type="button">✕</button>`;
       document.getElementById('photoGrid').prepend(box);
     };
     reader.readAsDataURL(file);
   });
+}
+
+function removePhoto(btn) {
+  const box = btn.parentElement;
+  const src = box.querySelector('img').src;
+  photos = photos.filter(p => p !== src);
+  box.remove();
 }
 
 async function generatePDF() {
@@ -517,7 +531,21 @@ async function generatePDF() {
   // Sauvegarder dans l'historique
   saveToHistory(rapportNum, labo, tech, dateStr);
 
-  doc.save(`${rapportNum}_Maintenance_VHF_${labo.replace(/\s/g, '_')}.pdf`);
+  const filename = `${rapportNum}_Maintenance_VHF_${labo.replace(/\s/g, '_')}.pdf`;
+  if (navigator.share && navigator.canShare) {
+    try {
+      const blob = doc.output('blob');
+      const file = new File([blob], filename, { type: 'application/pdf' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Rapport ${rapportNum}` });
+        return;
+      }
+    } catch(e) {
+      if (e.name !== 'AbortError') doc.save(filename);
+      return;
+    }
+  }
+  doc.save(filename);
 }
 
 function addFooter(doc, labo) {
@@ -582,9 +610,10 @@ function renderHistory() {
           <span class="hist-badge-ko">✘ ${r.ko} NOK</span>
         </div>
       </div>
-      <button onclick="restoreReport(${idx})" style="margin-left:10px;background:var(--blue);color:white;border:none;border-radius:8px;padding:10px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">
-        📂 Rouvrir
-      </button>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-left:10px">
+        <button onclick="restoreReport(${idx})" style="background:var(--blue);color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">📂 Rouvrir</button>
+        <button onclick="deleteReport(${idx})" style="background:white;color:#dc2626;border:1px solid #dc2626;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">🗑 Suppr.</button>
+      </div>
     </div>
   `).join('');
 }
@@ -633,9 +662,58 @@ Les données actuelles seront remplacées.`)) return;
   }, 300);
 }
 
+function deleteReport(idx) {
+  if (!confirm('Supprimer ce rapport de l\'historique ?')) return;
+  const history = JSON.parse(localStorage.getItem('evona_history') || '[]');
+  history.splice(idx, 1);
+  localStorage.setItem('evona_history', JSON.stringify(history));
+  renderHistory();
+}
+
 function clearHistory() {
   localStorage.removeItem('evona_history');
   renderHistory();
+}
+
+function autoSave() {
+  const draft = {
+    labo: document.getElementById('labo').value,
+    tech: document.getElementById('tech').value,
+    sn: document.getElementById('sn').value,
+    broche: document.getElementById('broche').value,
+    obs: document.getElementById('obs').value,
+    rapportNum: document.getElementById('rapportNum').value,
+    responses: JSON.parse(JSON.stringify(responses))
+  };
+  localStorage.setItem('evona_draft', JSON.stringify(draft));
+}
+
+function loadDraft() {
+  const draft = JSON.parse(localStorage.getItem('evona_draft') || 'null');
+  if (!draft) return;
+  document.getElementById('labo').value = draft.labo || '';
+  document.getElementById('tech').value = draft.tech || '';
+  document.getElementById('sn').value = draft.sn || '';
+  document.getElementById('broche').value = draft.broche || '';
+  document.getElementById('obs').value = draft.obs || '';
+  if (draft.rapportNum) document.getElementById('rapportNum').value = draft.rapportNum;
+  if (draft.responses) {
+    responses = draft.responses;
+    Object.keys(responses).forEach(id => {
+      const stat = responses[id].status;
+      if (!stat) return;
+      const card = document.getElementById('card-' + id);
+      if (card) {
+        card.className = 'cl-item has-action ' + stat;
+        ['ok','ko','na'].forEach(s => {
+          const btn = document.getElementById(s + '-' + id);
+          if (btn) btn.className = 'btn-status' + (stat === s ? ' active-' + s : '');
+        });
+      }
+      const el = document.getElementById('comm-' + id);
+      if (el && responses[id].comment) el.value = responses[id].comment;
+    });
+  }
 }
 
 // ── PWA Install ──
@@ -665,6 +743,7 @@ window.addEventListener('appinstalled', () => {
 });
 
 init();
+loadDraft();
 </script>
 <script>
 if ('serviceWorker' in navigator) {
