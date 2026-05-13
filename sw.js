@@ -1,5 +1,5 @@
-// ── Evona VHF – Service Worker v202604021610 ──
-const VERSION = '202604021610';
+// ── Evona VHF – Service Worker v202605131200 ──
+const VERSION = '202605131200';
 const CACHE_NAME = 'evona-vhf-' + VERSION;
 
 const ASSETS = [
