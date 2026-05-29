@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -99,6 +99,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
 <div class="app-header">
   <img src="logo.png" alt="Evona Logo">
   <h1>Maintenance VHF</h1>
+  <button onclick="newReport()" style="margin-left:auto; padding:7px 13px; background:rgba(255,255,255,0.15); color:white; border:1px solid rgba(255,255,255,0.45); border-radius:7px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;">+ Nouveau</button>
 </div>
 
 <div class="container">
@@ -177,9 +178,6 @@ const checklistData = [
 let responses = {};
 let photos = [];
 
-// ─── FONCTION DE NORMALISATION DES IMAGES POUR PDF ───
-// Les photos mobiles (HEIC/HEIF/orientation EXIF) posent problème dans jsPDF.
-// On redessine chaque image sur un canvas pour la convertir en JPEG standard.
 function normalizeImageForPDF(dataUrl) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -195,7 +193,6 @@ function normalizeImageForPDF(dataUrl) {
       canvas.width = w;
       canvas.height = h;
       ctx.drawImage(img, 0, 0, w, h);
-      // Force JPEG format with 80% quality
       resolve(canvas.toDataURL('image/jpeg', 0.80));
     };
     img.onerror = reject;
@@ -294,14 +291,13 @@ async function generatePDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compression: true });
 
-  // ─── NORMALISATION DES PHOTOS AVANT INSERTION PDF ───
   let pdfPhotos = [];
   if (photos.length > 0) {
     try {
       pdfPhotos = await Promise.all(photos.map(p => normalizeImageForPDF(p)));
     } catch(e) {
       console.error('Erreur normalisation photos:', e);
-      pdfPhotos = photos; // fallback
+      pdfPhotos = photos;
     }
   }
   const labo = document.getElementById('labo').value || "Inconnu";
@@ -312,24 +308,16 @@ async function generatePDF() {
   const dateStr = new Date().toLocaleDateString('fr-FR');
   const W = 210;
 
-  // ═══════════════════════════════════════
-  // PAGE 1 — EN-TÊTE PREMIUM
-  // ═══════════════════════════════════════
-
-  // Fond bleu foncé header
   doc.setFillColor(15, 35, 90);
   doc.rect(0, 0, W, 50, 'F');
 
-  // Bande accent cyan
   doc.setFillColor(0, 180, 220);
   doc.rect(0, 50, W, 3, 'F');
 
-  // Logo centré à droite
   try {
     doc.addImage(logoUrl, 'PNG', W - 52, 5, 40, 40);
   } catch(e) {}
 
-  // Titre à gauche
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
   doc.setFont(undefined, 'bold');
@@ -341,7 +329,6 @@ async function generatePDF() {
   doc.text("Evona — Spécialiste des Laboratoires Dentaires", 14, 39);
   doc.text(`Généré le ${dateStr}`, 14, 45);
 
-  // Badge numéro de rapport
   doc.setFillColor(0, 180, 220);
   doc.roundedRect(14, 6, 52, 8, 2, 2, 'F');
   doc.setTextColor(255, 255, 255);
@@ -349,15 +336,12 @@ async function generatePDF() {
   doc.setFont(undefined, 'bold');
   doc.text(`N° ${rapportNum}`, 40, 11.5, { align: 'center' });
 
-  // ─── BLOC INFOS ───
   const infoY = 62;
-  // Fond gris clair
   doc.setFillColor(245, 248, 252);
   doc.roundedRect(10, infoY, W - 20, 38, 3, 3, 'F');
   doc.setDrawColor(191, 219, 254);
   doc.roundedRect(10, infoY, W - 20, 38, 3, 3, 'S');
 
-  // Titre bloc
   doc.setFillColor(15, 35, 90);
   doc.roundedRect(10, infoY, 60, 7, 2, 2, 'F');
   doc.setTextColor(255);
@@ -365,7 +349,6 @@ async function generatePDF() {
   doc.setFont(undefined, 'bold');
   doc.text("INFORMATIONS INTERVENTION", 14, infoY + 5);
 
-  // Grille 2x2
   const fields = [
     ["Laboratoire", labo],
     ["Technicien", tech],
@@ -384,7 +367,6 @@ async function generatePDF() {
     doc.text(f[1], col + 28, row);
   });
 
-  // ─── RÉSUMÉ STATISTIQUES ───
   const totalItems = Object.keys(responses).filter(k => responses[k].status).length;
   const okCount = Object.values(responses).filter(r => r.status === 'ok').length;
   const koCount = Object.values(responses).filter(r => r.status === 'ko').length;
@@ -412,9 +394,6 @@ async function generatePDF() {
     doc.text(s.label, x + statW/2 - 2, statsY + 15, { align: 'center' });
   });
 
-  // ═══════════════════════════════════════
-  // DÉTAIL DES CONTRÔLES
-  // ═══════════════════════════════════════
   let y = statsY + 24;
 
   doc.setFillColor(15, 35, 90);
@@ -435,14 +414,11 @@ async function generatePDF() {
 
     const isOk = res.status === 'ok';
     const bgColor = isOk ? [240, 253, 244] : [254, 242, 242];
-    const borderColor = isOk ? [134, 239, 172] : [252, 165, 165];
     const textColor = isOk ? [5, 150, 105] : [220, 38, 38];
 
-    // Fond de la ligne
     doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
     doc.roundedRect(10, y - 4, W - 20, 8, 1, 1, 'F');
 
-    // Badge statut
     doc.setFillColor(textColor[0], textColor[1], textColor[2]);
     doc.roundedRect(12, y - 3, 10, 6, 1, 1, 'F');
     doc.setTextColor(255);
@@ -450,14 +426,12 @@ async function generatePDF() {
     doc.setFont(undefined, 'bold');
     doc.text(isOk ? 'OK' : 'NOK', 17, y + 0.5, { align: 'center' });
 
-    // Label
     doc.setTextColor(30, 30, 30);
     doc.setFontSize(8.5);
     doc.setFont(undefined, 'normal');
     doc.text(res.label, 26, y + 0.5);
     y += 9;
 
-    // Commentaire
     if (res.comment && res.comment.trim()) {
       if (y > 272) { addFooter(doc, labo); doc.addPage(); y = 20; }
       doc.setTextColor(100, 100, 120);
@@ -472,7 +446,6 @@ async function generatePDF() {
     }
   });
 
-  // ─── OBSERVATIONS ───
   const obs = document.getElementById('obs').value;
   if (obs && obs.trim()) {
     if (y > 250) { addFooter(doc, labo); doc.addPage(); y = 20; }
@@ -497,7 +470,6 @@ async function generatePDF() {
 
   addFooter(doc, labo);
 
-  // ─── ANNEXE PHOTOS ───
   if (pdfPhotos.length > 0) {
     doc.addPage();
 
@@ -509,26 +481,19 @@ async function generatePDF() {
     doc.text("ANNEXE PHOTOS", 14, 11);
 
     let px = 14, py = 24;
-    const imgW = 86, imgH = 86;  // photos carrées 86×86mm, 2 par rangée
-    const gap = 10;              // espacement entre photos
+    const imgW = 86, imgH = 86;
+    const gap = 10;
     pdfPhotos.forEach((p, idx) => {
       if (px + imgW > W - 14) { px = 14; py += imgH + gap; }
       if (py + imgH > 280) { addFooter(doc, labo); doc.addPage(); px = 14; py = 24; }
       doc.setDrawColor(200, 200, 200);
       doc.roundedRect(px - 1, py - 1, imgW + 2, imgH + 2, 3, 3, 'S');
-      // Format normalisé en JPEG par la fonction normalizeImageForPDF
-      let imgFormat = 'JPEG';
-      // Si l'image n'a pas été normalisée (fallback), détecter le format original
-      if (p.startsWith('data:image/png')) imgFormat = 'PNG';
-      else if (p.startsWith('data:image/webp')) imgFormat = 'WEBP';
-      else if (p.startsWith('data:image/gif')) imgFormat = 'GIF';
       doc.addImage(p, 'JPEG', px, py, imgW, imgH, undefined, 'SLOW');
       px += imgW + gap;
     });
     addFooter(doc, labo);
   }
 
-  // Sauvegarder dans l'historique
   saveToHistory(rapportNum, labo, tech, dateStr);
 
   const filename = `${rapportNum}_Maintenance_VHF_${labo.replace(/\s/g, '_')}.pdf`;
@@ -550,7 +515,6 @@ async function generatePDF() {
 
 function addFooter(doc, labo) {
   const W = 210;
-  const pageCount = doc.internal.getNumberOfPages();
   const currentPage = doc.getCurrentPageInfo().pageNumber;
   doc.setFillColor(245, 248, 252);
   doc.rect(0, 287, W, 10, 'F');
@@ -561,13 +525,11 @@ function addFooter(doc, labo) {
   doc.text(`Page ${currentPage}`, W - 14, 293, { align: 'right' });
 }
 
-// ── Historique ──
 function saveToHistory(num, client, tech, date) {
   const history = JSON.parse(localStorage.getItem('evona_history') || '[]');
   const okCount = Object.values(responses).filter(r => r.status === 'ok').length;
   const koCount = Object.values(responses).filter(r => r.status === 'ko').length;
 
-  // Snapshot complet du formulaire
   const snapshot = {
     num,
     client,
@@ -581,7 +543,6 @@ function saveToHistory(num, client, tech, date) {
     responses: JSON.parse(JSON.stringify(responses)),
     comments: {}
   };
-  // Sauvegarder tous les commentaires
   Object.keys(responses).forEach(id => {
     const el = document.getElementById('comm-' + id);
     if (el) snapshot.comments[id] = el.value || '';
@@ -626,7 +587,6 @@ function restoreReport(idx) {
   if (!confirm(`Rouvrir le rapport ${r.num} — ${r.client} ?
 Les données actuelles seront remplacées.`)) return;
 
-  // Remplir les infos
   document.getElementById('rapportNum').value = r.num;
   document.getElementById('labo').value = r.client || '';
   document.getElementById('tech').value = r.tech || '';
@@ -634,7 +594,6 @@ Les données actuelles seront remplacées.`)) return;
   document.getElementById('broche').value = r.broche || '';
   document.getElementById('obs').value = r.obs || '';
 
-  // Restaurer les réponses checklist
   responses = JSON.parse(JSON.stringify(r.responses || {}));
   Object.keys(responses).forEach(id => {
     const stat = responses[id].status;
@@ -648,14 +607,12 @@ Les données actuelles seront remplacées.`)) return;
         });
       }
     }
-    // Restaurer les commentaires
     const cmt = (r.comments || {})[id] || '';
     const el = document.getElementById('comm-' + id);
     if (el) el.value = cmt;
     if (responses[id]) responses[id].comment = cmt;
   });
 
-  // Aller sur la page infos
   showPage('info');
   setTimeout(() => {
     alert('✅ Rapport ' + r.num + ' chargé avec succès !\nVous pouvez modifier et re-générer le PDF.');
@@ -716,6 +673,20 @@ function loadDraft() {
   }
 }
 
+function newReport() {
+  if (!confirm('Créer un nouveau rapport ?\nLe brouillon actuel sera effacé.')) return;
+  localStorage.removeItem('evona_draft');
+  responses = {};
+  photos = [];
+  document.getElementById('rapportNum').value = generateRapportNum();
+  ['labo','tech','sn','broche','obs'].forEach(id => document.getElementById(id).value = '');
+  document.querySelectorAll('.cl-item').forEach(el => el.className = 'cl-item');
+  document.querySelectorAll('.btn-status').forEach(btn => btn.className = 'btn-status');
+  document.querySelectorAll('.cl-comment input').forEach(inp => inp.value = '');
+  document.getElementById('photoGrid').innerHTML = '<label class="photo-box" for="camInput"><span class="photo-add">+</span></label>';
+  showPage('info');
+}
+
 // ── PWA Install ──
 let deferredPrompt;
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -752,27 +723,22 @@ if ('serviceWorker' in navigator) {
       const reg = await navigator.serviceWorker.register('sw.js');
       console.log('[App] SW enregistré:', reg.scope);
 
-      // Vérifie les mises à jour à chaque chargement
       reg.addEventListener('updatefound', () => {
         const newWorker = reg.installing;
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            // Nouvelle version disponible — afficher la bannière
             document.getElementById('updateBanner').style.display = 'flex';
-            document.getElementById('updateBanner')
-              ._newWorker = newWorker;
+            document.getElementById('updateBanner')._newWorker = newWorker;
           }
         });
       });
 
-      // Forcer la vérification de mise à jour
       reg.update();
     } catch(err) {
       console.log('[App] SW erreur:', err);
     }
   });
 
-  // Recharger la page quand le nouveau SW prend le contrôle
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     window.location.reload();
   });
