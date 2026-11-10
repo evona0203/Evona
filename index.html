@@ -150,6 +150,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
       </div>
       <div class="field"><label>N° de Série Machine</label><input type="text" id="sn" placeholder="Ex: VHF-0000"></div>
       <div class="field"><label>Heure de fonctionnement broche</label><input type="text" id="broche" placeholder="Ex: 1250 h"></div>
+      <div class="field" id="contractTypeField">
+        <label>Type de contrat <span style="font-weight:400;color:var(--text-muted);">(usage interne, n'apparaît pas sur le PDF)</span></label>
+        <select id="contractType" style="padding:10px; border:1px solid var(--gray-border); border-radius:6px; font-size:14px; outline:none; background:white;">
+          <option value="maintenance">Contrat de maintenance (révision annuelle)</option>
+          <option value="location">Contrat de location (révision annuelle)</option>
+          <option value="classique">Révision classique sur devis (tous les 2 ans)</option>
+        </select>
+      </div>
     </div>
     <button class="btn-main btn-blue" style="width:100%" id="btn-goto-check" onclick="showPage('check')">Accéder à la Checklist →</button>
   </div>
@@ -337,6 +345,7 @@ let photos = [];
 let stockDeducted = false; // true une fois le stock Dolibarr déduit pour le rapport en cours (évite une double déduction si on réexporte le PDF)
 let reportType = 'revision'; // 'revision' ou 'correctif'
 let correctifParts = []; // pièces remplacées ajoutées librement pour un rapport correctif : [{ref, label, qty}]
+let revisionScheduled = false; // true une fois la prochaine révision planifiée dans l'agenda Dolibarr (évite les doublons si on réexporte le PDF)
 
 function setReportType(type) {
   reportType = type;
@@ -344,6 +353,7 @@ function setReportType(type) {
   document.getElementById('type-correctif').className = 'type-btn' + (type === 'correctif' ? ' active' : '');
   document.getElementById('tab-main').textContent = type === 'correctif' ? 'Correctif' : 'Checklist';
   document.getElementById('btn-goto-check').textContent = type === 'correctif' ? 'Accéder au Correctif →' : 'Accéder à la Checklist →';
+  document.getElementById('contractTypeField').style.display = type === 'correctif' ? 'none' : 'flex';
   autoSave();
 }
 
@@ -544,6 +554,29 @@ async function deduireStockCorrectif(rapportNum) {
     }
   }
   return { error: false, results };
+}
+
+// Planifie la prochaine révision dans l'agenda Dolibarr (annuel pour maintenance/location, tous les 2 ans sinon)
+async function scheduleNextRevision(rapportNum) {
+  const labo = document.getElementById('labo').value.trim();
+  const modele = document.getElementById('modele').value;
+  const contractType = document.getElementById('contractType').value;
+  if (!labo) return { skipped: true, reason: 'no_labo' };
+  if (!PROXY_CONFIG.url) return { skipped: true, reason: 'no_proxy_configured' };
+
+  const years = contractType === 'classique' ? 2 : 1;
+  const next = new Date();
+  next.setFullYear(next.getFullYear() + years);
+  next.setHours(9, 0, 0, 0);
+  const datep = Math.floor(next.getTime() / 1000);
+
+  const res = await fetch(PROXY_CONFIG.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-App-Token': PROXY_CONFIG.token },
+    body: JSON.stringify({ action: 'schedule_revision', labo, modele, rapport: rapportNum, contractType, datep })
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
 }
 
 // ── Onglet Stock : recherche/ajustement libre, protégé par code PIN ──
@@ -1017,6 +1050,21 @@ async function generatePDF() {
     }
   }
 
+  // La prochaine révision n'est planifiée qu'une seule fois par rapport (uniquement pour les rapports Révision).
+  if (reportType === 'revision' && !revisionScheduled) {
+    try {
+      const schedResult = await scheduleNextRevision(rapportNum);
+      if (schedResult && schedResult.error) {
+        alert('⚠️ Rapport PDF généré, mais la planification de la prochaine révision a échoué : ' + schedResult.message);
+      } else if (schedResult && !schedResult.skipped) {
+        revisionScheduled = true;
+      }
+    } catch(e) {
+      console.error('Erreur planification prochaine révision:', e);
+      alert('⚠️ Rapport PDF généré, mais impossible de planifier la prochaine révision (connexion au serveur impossible).');
+    }
+  }
+
   saveToHistory(rapportNum, labo, tech, dateStr);
   autoSave();
 
@@ -1066,6 +1114,8 @@ function saveToHistory(num, client, tech, date) {
     modele: document.getElementById('modele').value || '',
     obs: document.getElementById('obs').value || '',
     stockDeducted,
+    revisionScheduled,
+    contractType: document.getElementById('contractType').value || '',
     reportType,
     correctifPanne: document.getElementById('correctifPanne').value || '',
     correctifIntervention: document.getElementById('correctifIntervention').value || '',
@@ -1128,6 +1178,8 @@ Les données actuelles seront remplacées.`)) return;
   document.getElementById('broche').value = r.broche || '';
   document.getElementById('modele').value = r.modele || '';
   stockDeducted = !!r.stockDeducted;
+  revisionScheduled = !!r.revisionScheduled;
+  document.getElementById('contractType').value = r.contractType || 'maintenance';
   refreshPartsVisibility();
   document.getElementById('obs').value = r.obs || '';
 
@@ -1191,6 +1243,8 @@ function autoSave() {
     obs: document.getElementById('obs').value,
     rapportNum: document.getElementById('rapportNum').value,
     stockDeducted,
+    revisionScheduled,
+    contractType: document.getElementById('contractType').value,
     reportType,
     correctifPanne: document.getElementById('correctifPanne').value,
     correctifIntervention: document.getElementById('correctifIntervention').value,
@@ -1209,6 +1263,8 @@ function loadDraft() {
   document.getElementById('broche').value = draft.broche || '';
   document.getElementById('modele').value = draft.modele || '';
   stockDeducted = !!draft.stockDeducted;
+  revisionScheduled = !!draft.revisionScheduled;
+  document.getElementById('contractType').value = draft.contractType || 'maintenance';
   refreshPartsVisibility();
   document.getElementById('obs').value = draft.obs || '';
   setReportType(draft.reportType || 'revision');
@@ -1248,9 +1304,11 @@ function newReport() {
   responses = {};
   photos = [];
   stockDeducted = false;
+  revisionScheduled = false;
   correctifParts = [];
   document.getElementById('rapportNum').value = generateRapportNum();
   ['labo','tech','sn','broche','modele','obs','correctifPanne','correctifIntervention'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('contractType').value = 'maintenance';
   document.querySelectorAll('.cl-item').forEach(el => el.className = 'cl-item');
   document.querySelectorAll('.btn-status').forEach(btn => btn.className = 'btn-status');
   document.querySelectorAll('.cl-comment input').forEach(inp => inp.value = '');
