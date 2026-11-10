@@ -64,6 +64,17 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
 .cl-qty label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
 .cl-qty input { width: 70px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; background: rgba(255,255,255,0.7); }
 
+.type-seg { display: flex; gap: 8px; margin-bottom: 14px; }
+.type-btn { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--gray-border); background: white; font-weight: 700; font-size: 13px; cursor: pointer; color: var(--text-muted); }
+.type-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+
+.part-item { display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--gray-border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; background: white; }
+.part-item .part-info { flex: 1; min-width: 0; }
+.part-item .part-ref { font-weight: 700; font-size: 13px; }
+.part-item .part-label { font-size: 12px; color: var(--text-muted); }
+.part-item .part-qty { font-weight: 700; color: var(--blue); margin: 0 12px; white-space: nowrap; }
+.part-item .part-remove { background: var(--red-light); color: var(--red); border: none; border-radius: 6px; width: 28px; height: 28px; font-size: 16px; cursor: pointer; flex-shrink: 0; }
+
 .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .photo-box { aspect-ratio: 1; border: 2px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
 .photo-box img { width: 100%; height: 100%; object-fit: cover; }
@@ -109,13 +120,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
 <div class="container">
   <div class="tabs">
     <button class="tab active" onclick="showPage('info')">Infos</button>
-    <button class="tab" onclick="showPage('check')">Checklist</button>
+    <button class="tab" id="tab-main" onclick="showPage('check')">Checklist</button>
     <button class="tab" onclick="showPage('fin')">Rapport</button>
     <button class="tab" onclick="showPage('hist')">Historique</button>
     <button class="tab" onclick="showPage('stock')">Stock</button>
   </div>
 
   <div class="page active" id="p-info">
+    <div class="card">
+      <div class="card-title">Type de rapport</div>
+      <div class="type-seg">
+        <button class="type-btn active" id="type-revision" onclick="setReportType('revision')">🔧 Révision</button>
+        <button class="type-btn" id="type-correctif" onclick="setReportType('correctif')">⚡ Correctif</button>
+      </div>
+    </div>
     <div class="card">
       <div class="card-title">Intervention</div>
       <div class="field">
@@ -133,12 +151,47 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
       <div class="field"><label>N° de Série Machine</label><input type="text" id="sn" placeholder="Ex: VHF-0000"></div>
       <div class="field"><label>Heure de fonctionnement broche</label><input type="text" id="broche" placeholder="Ex: 1250 h"></div>
     </div>
-    <button class="btn-main btn-blue" style="width:100%" onclick="showPage('check')">Accéder à la Checklist →</button>
+    <button class="btn-main btn-blue" style="width:100%" id="btn-goto-check" onclick="showPage('check')">Accéder à la Checklist →</button>
   </div>
 
   <div class="page" id="p-check">
     <div id="checklistContainer"></div>
     <button class="btn-main btn-blue" style="width:100%; margin-top:15px;" onclick="showPage('fin')">Suivant : Photos & Fin →</button>
+  </div>
+
+  <div class="page" id="p-correctif">
+    <div class="card">
+      <div class="card-title">🛠️ Panne / Problème signalé</div>
+      <div class="field">
+        <textarea id="correctifPanne" rows="4" placeholder="Décrire la panne ou le problème rencontré..."></textarea>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">✅ Intervention réalisée</div>
+      <div class="field">
+        <textarea id="correctifIntervention" rows="4" placeholder="Décrire la solution apportée, le dépannage effectué..."></textarea>
+      </div>
+    </div>
+    <div class="card" id="correctifPartsCard">
+      <div class="card-title">🔩 Pièces remplacées</div>
+      <div id="correctifPinBlock">
+        <div class="field">
+          <label>Code PIN requis pour rechercher une pièce</label>
+          <input type="password" inputmode="numeric" id="correctifPinInput" placeholder="Code à 4 chiffres" onkeydown="if(event.key==='Enter') unlockStock()">
+        </div>
+        <button class="btn-main btn-outline" style="width:100%" onclick="unlockStock()">Déverrouiller</button>
+      </div>
+      <div id="correctifSearchBlock" style="display:none;">
+        <div class="field">
+          <label>Référence ou nom du produit</label>
+          <input type="text" id="correctifQuery" placeholder="Ex: VHF231256 ou filtre" onkeydown="if(event.key==='Enter') searchCorrectifPart()">
+        </div>
+        <button class="btn-main btn-outline" style="width:100%; margin-bottom:12px;" onclick="searchCorrectifPart()">Rechercher</button>
+        <div id="correctifSearchResults"></div>
+        <div id="correctifPartsList"></div>
+      </div>
+    </div>
+    <button class="btn-main btn-blue" style="width:100%; margin-top:5px;" onclick="showPage('fin')">Suivant : Photos & Fin →</button>
   </div>
 
   <div class="page" id="p-fin">
@@ -282,6 +335,17 @@ const PROXY_CONFIG = {
 let responses = {};
 let photos = [];
 let stockDeducted = false; // true une fois le stock Dolibarr déduit pour le rapport en cours (évite une double déduction si on réexporte le PDF)
+let reportType = 'revision'; // 'revision' ou 'correctif'
+let correctifParts = []; // pièces remplacées ajoutées librement pour un rapport correctif : [{ref, label, qty}]
+
+function setReportType(type) {
+  reportType = type;
+  document.getElementById('type-revision').className = 'type-btn' + (type === 'revision' ? ' active' : '');
+  document.getElementById('type-correctif').className = 'type-btn' + (type === 'correctif' ? ' active' : '');
+  document.getElementById('tab-main').textContent = type === 'correctif' ? 'Correctif' : 'Checklist';
+  document.getElementById('btn-goto-check').textContent = type === 'correctif' ? 'Accéder au Correctif →' : 'Accéder à la Checklist →';
+  autoSave();
+}
 
 function normalizeImageForPDF(dataUrl) {
   return new Promise((resolve, reject) => {
@@ -398,19 +462,12 @@ function saveQty(id, partKey, val) { responses[id].qtys[partKey] = parseInt(val,
 function showPage(p) {
   document.querySelectorAll('.page').forEach(pg => pg.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  const pages = { info: 'p-info', check: 'p-check', fin: 'p-fin', hist: 'p-hist', stock: 'p-stock' };
+  const pages = { info: 'p-info', check: reportType === 'correctif' ? 'p-correctif' : 'p-check', fin: 'p-fin', hist: 'p-hist', stock: 'p-stock' };
   const tabIdx = { info: 0, check: 1, fin: 2, hist: 3, stock: 4 };
   document.getElementById(pages[p]).classList.add('active');
   document.querySelectorAll('.tab')[tabIdx[p]].classList.add('active');
   if (p === 'hist') renderHistory();
-  if (p === 'stock') {
-    if (stockPin) {
-      document.getElementById('stockPinCard').style.display = 'none';
-      document.getElementById('stockPanel').style.display = 'block';
-    } else {
-      showStockLock();
-    }
-  }
+  if (p === 'check' || p === 'stock') updateStockUnlockUI(!stockPin);
   window.scrollTo(0, 0);
 }
 
@@ -473,6 +530,22 @@ async function deduireStockDolibarr(rapportNum, modele) {
   return res.json();
 }
 
+// Déduit du stock Dolibarr les pièces ajoutées librement à un rapport Correctif (nécessite le PIN, via callStockProxy/adjust)
+async function deduireStockCorrectif(rapportNum) {
+  if (correctifParts.length === 0) return { skipped: true, reason: 'no_parts' };
+  const results = [];
+  for (const p of correctifParts) {
+    try {
+      await callStockProxy('adjust', { ref: p.ref, qty: -p.qty, reason: `Rapport ${rapportNum} - Correctif` });
+      results.push({ ref: p.ref, ok: true, message: `Stock déduit (-${p.qty})` });
+    } catch (e) {
+      if (e.message === 'PIN_INVALID') return { error: true, message: 'Code PIN invalide ou expiré' };
+      results.push({ ref: p.ref, ok: false, message: e.message });
+    }
+  }
+  return { error: false, results };
+}
+
 // ── Onglet Stock : recherche/ajustement libre, protégé par code PIN ──
 let stockPin = sessionStorage.getItem('evona_stock_pin') || '';
 
@@ -497,22 +570,30 @@ async function callStockProxy(action, payload) {
   return data;
 }
 
-function showStockLock(errorMsg) {
-  document.getElementById('stockPanel').style.display = 'none';
-  document.getElementById('stockPinCard').style.display = 'block';
+// Le PIN est partagé entre l'onglet Stock et le bloc "Pièces remplacées" du Correctif :
+// les deux blocs (verrouillé/déverrouillé) sont synchronisés en même temps.
+function updateStockUnlockUI(locked, errorMsg) {
+  [['stockPinCard', 'stockPanel'], ['correctifPinBlock', 'correctifSearchBlock']].forEach(([lockId, unlockId]) => {
+    const lockEl = document.getElementById(lockId);
+    const unlockEl = document.getElementById(unlockId);
+    if (lockEl) lockEl.style.display = locked ? 'block' : 'none';
+    if (unlockEl) unlockEl.style.display = locked ? 'none' : 'block';
+  });
   const errEl = document.getElementById('stockPinError');
-  if (errorMsg) { errEl.textContent = '⚠️ ' + errorMsg; errEl.style.display = 'block'; }
-  else { errEl.style.display = 'none'; }
+  if (errEl) {
+    if (locked && errorMsg) { errEl.textContent = '⚠️ ' + errorMsg; errEl.style.display = 'block'; }
+    else { errEl.style.display = 'none'; }
+  }
 }
 
+function showStockLock(errorMsg) { updateStockUnlockUI(true, errorMsg); }
+
 function unlockStock() {
-  const val = document.getElementById('stockPinInput').value.trim();
+  const val = (document.getElementById('stockPinInput')?.value || document.getElementById('correctifPinInput')?.value || '').trim();
   if (!val) return;
   stockPin = val;
   sessionStorage.setItem('evona_stock_pin', val);
-  document.getElementById('stockPinCard').style.display = 'none';
-  document.getElementById('stockPanel').style.display = 'block';
-  document.getElementById('stockPinError').style.display = 'none';
+  updateStockUnlockUI(false);
 }
 
 async function searchStock() {
@@ -582,6 +663,72 @@ async function adjustStock(idx, ref, sign) {
   }
 }
 
+// ── Pièces remplacées (rapport Correctif) : recherche libre + liste à déduire à la génération du PDF ──
+async function searchCorrectifPart() {
+  const query = document.getElementById('correctifQuery').value.trim();
+  const resultsEl = document.getElementById('correctifSearchResults');
+  if (!query) return;
+  resultsEl.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:16px">Recherche...</p>';
+  try {
+    const data = await callStockProxy('search', { query });
+    renderCorrectifSearchResults(data.products || []);
+  } catch (e) {
+    if (e.message !== 'PIN_INVALID') {
+      resultsEl.innerHTML = `<p style="color:#dc2626;font-size:13px;text-align:center;padding:16px">${e.message}</p>`;
+    } else {
+      resultsEl.innerHTML = '';
+    }
+  }
+}
+
+function renderCorrectifSearchResults(products) {
+  const resultsEl = document.getElementById('correctifSearchResults');
+  if (products.length === 0) {
+    resultsEl.innerHTML = '<p style="color:#999;font-size:13px;text-align:center;padding:16px">Aucun produit trouvé.</p>';
+    return;
+  }
+  resultsEl.innerHTML = products.map((p, idx) => `
+    <div class="part-item">
+      <div class="part-info">
+        <div class="part-ref">${p.ref}</div>
+        <div class="part-label">${p.label || ''} ${p.stock_reel != null ? `(stock: ${p.stock_reel})` : ''}</div>
+      </div>
+      <input type="number" id="correctifAddQty-${idx}" min="1" step="1" value="1" style="width:55px;padding:6px;border:1px solid var(--gray-border);border-radius:6px;margin-right:8px;">
+      <button class="btn-main btn-blue" style="padding:8px 12px;font-size:12px;" onclick="addCorrectifPart('${p.ref}', '${(p.label || '').replace(/'/g, "\\'")}', ${idx})">+ Ajouter</button>
+    </div>
+  `).join('');
+}
+
+function addCorrectifPart(ref, label, idx) {
+  const qty = parseInt(document.getElementById(`correctifAddQty-${idx}`).value, 10) || 1;
+  const existing = correctifParts.find(p => p.ref === ref);
+  if (existing) existing.qty += qty;
+  else correctifParts.push({ ref, label, qty });
+  renderCorrectifPartsList();
+  autoSave();
+}
+
+function removeCorrectifPart(idx) {
+  correctifParts.splice(idx, 1);
+  renderCorrectifPartsList();
+  autoSave();
+}
+
+function renderCorrectifPartsList() {
+  const el = document.getElementById('correctifPartsList');
+  if (correctifParts.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = '<div class="section-hdr">Pièces ajoutées</div>' + correctifParts.map((p, idx) => `
+    <div class="part-item">
+      <div class="part-info">
+        <div class="part-ref">${p.ref}</div>
+        <div class="part-label">${p.label || ''}</div>
+      </div>
+      <div class="part-qty">× ${p.qty}</div>
+      <button class="part-remove" onclick="removeCorrectifPart(${idx})">✕</button>
+    </div>
+  `).join('');
+}
+
 async function generatePDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compression: true });
@@ -618,7 +765,7 @@ async function generatePDF() {
   doc.setFontSize(20);
   doc.setFont(undefined, 'bold');
   doc.text("RAPPORT DE", 14, 20);
-  doc.text("MAINTENANCE VHF", 14, 30);
+  doc.text(reportType === 'correctif' ? "CORRECTIF" : "MAINTENANCE VHF", 14, 30);
   doc.setFontSize(9);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(180, 210, 255);
@@ -665,84 +812,141 @@ async function generatePDF() {
     doc.text(f[1], col + 28, row);
   });
 
-  const totalItems = Object.keys(responses).filter(k => responses[k].status).length;
-  const okCount = Object.values(responses).filter(r => r.status === 'ok').length;
-  const koCount = Object.values(responses).filter(r => r.status === 'ko').length;
-  const naCount = Object.values(responses).filter(r => r.status === 'na').length;
+  let y;
 
-  const statsY = infoY + infoBoxH + 6;
-  const statW = (W - 20) / 3;
+  if (reportType === 'correctif') {
+    y = infoY + infoBoxH + 10;
 
-  const stats = [
-    { label: "Validés", val: okCount, color: [5, 150, 105], bg: [209, 250, 229] },
-    { label: "Non conformes", val: koCount, color: [220, 38, 38], bg: [254, 226, 226] },
-    { label: "Non applicable", val: naCount, color: [107, 114, 128], bg: [243, 244, 246] }
-  ];
+    const addTextBox = (title, text, colors) => {
+      if (!text || !text.trim()) return;
+      if (y > 250) { addFooter(doc, labo); doc.addPage(); y = 20; }
+      const lines = doc.splitTextToSize(text.trim(), W - 44);
+      const boxH = lines.length * 5 + 14;
+      doc.setFillColor(...colors.bg);
+      doc.setDrawColor(...colors.border);
+      doc.roundedRect(10, y, W - 20, boxH, 2, 2, 'FD');
+      doc.setFillColor(...colors.accent);
+      doc.roundedRect(10, y, 4, boxH, 1, 1, 'F');
+      doc.setTextColor(...colors.title);
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'bold');
+      doc.text(title, 18, y + 7);
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(...colors.text);
+      doc.text(lines, 18, y + 13);
+      y += boxH + 5;
+    };
 
-  stats.forEach((s, i) => {
-    const x = 10 + i * statW;
-    doc.setFillColor(s.bg[0], s.bg[1], s.bg[2]);
-    doc.roundedRect(x, statsY, statW - 2, 16, 2, 2, 'F');
-    doc.setTextColor(s.color[0], s.color[1], s.color[2]);
-    doc.setFontSize(16);
-    doc.setFont(undefined, 'bold');
-    doc.text(String(s.val), x + statW/2 - 2, statsY + 10, { align: 'center' });
-    doc.setFontSize(7);
-    doc.setFont(undefined, 'normal');
-    doc.text(s.label, x + statW/2 - 2, statsY + 15, { align: 'center' });
-  });
+    addTextBox("PANNE / PROBLÈME SIGNALÉ", document.getElementById('correctifPanne').value, {
+      bg: [254, 242, 242], border: [252, 165, 165], accent: [220, 38, 38], title: [153, 27, 27], text: [80, 30, 30]
+    });
+    addTextBox("INTERVENTION RÉALISÉE", document.getElementById('correctifIntervention').value, {
+      bg: [240, 253, 244], border: [134, 239, 172], accent: [5, 150, 105], title: [6, 95, 70], text: [20, 70, 50]
+    });
 
-  let y = statsY + 24;
-
-  doc.setFillColor(15, 35, 90);
-  doc.rect(10, y, W - 20, 8, 'F');
-  doc.setTextColor(255);
-  doc.setFontSize(8);
-  doc.setFont(undefined, 'bold');
-  doc.text("DÉTAIL DES CONTRÔLES", 14, y + 5.5);
-  y += 13;
-
-  let currentSection = '';
-  doc.setFontSize(8.5);
-
-  Object.keys(responses).forEach(key => {
-    const res = responses[key];
-    if (!res.status || res.status === 'na') return;
-    if (y > 272) { addFooter(doc, labo); doc.addPage(); y = 20; }
-
-    const isOk = res.status === 'ok';
-    const bgColor = isOk ? [240, 253, 244] : [254, 242, 242];
-    const textColor = isOk ? [5, 150, 105] : [220, 38, 38];
-
-    doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
-    doc.roundedRect(10, y - 4, W - 20, 8, 1, 1, 'F');
-
-    doc.setFillColor(textColor[0], textColor[1], textColor[2]);
-    doc.roundedRect(12, y - 3, 10, 6, 1, 1, 'F');
-    doc.setTextColor(255);
-    doc.setFontSize(6.5);
-    doc.setFont(undefined, 'bold');
-    doc.text(isOk ? 'OK' : 'NOK', 17, y + 0.5, { align: 'center' });
-
-    doc.setTextColor(30, 30, 30);
-    doc.setFontSize(8.5);
-    doc.setFont(undefined, 'normal');
-    doc.text(res.label, 26, y + 0.5);
-    y += 9;
-
-    if (res.comment && res.comment.trim()) {
-      if (y > 272) { addFooter(doc, labo); doc.addPage(); y = 20; }
-      doc.setTextColor(100, 100, 120);
-      doc.setFontSize(7.5);
-      doc.setFont(undefined, 'italic');
-      const lines = doc.splitTextToSize('> ' + res.comment.trim(), W - 40);
-      lines.forEach(line => {
-        doc.text(line, 30, y);
-        y += 5;
+    if (correctifParts.length > 0) {
+      if (y > 260) { addFooter(doc, labo); doc.addPage(); y = 20; }
+      doc.setFillColor(15, 35, 90);
+      doc.rect(10, y, W - 20, 8, 'F');
+      doc.setTextColor(255);
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'bold');
+      doc.text("PIÈCES REMPLACÉES", 14, y + 5.5);
+      y += 13;
+      doc.setFontSize(8.5);
+      correctifParts.forEach(p => {
+        if (y > 272) { addFooter(doc, labo); doc.addPage(); y = 20; }
+        doc.setFillColor(240, 253, 244);
+        doc.roundedRect(10, y - 4, W - 20, 8, 1, 1, 'F');
+        doc.setTextColor(30, 30, 30);
+        doc.setFont(undefined, 'normal');
+        doc.text(`${p.ref}  —  ${p.label || ''}`, 14, y + 0.5);
+        doc.setTextColor(15, 35, 90);
+        doc.setFont(undefined, 'bold');
+        doc.text(`× ${p.qty}`, W - 16, y + 0.5, { align: 'right' });
+        y += 9;
       });
-      y += 1;
+      y += 4;
     }
-  });
+  } else {
+    const okCount = Object.values(responses).filter(r => r.status === 'ok').length;
+    const koCount = Object.values(responses).filter(r => r.status === 'ko').length;
+    const naCount = Object.values(responses).filter(r => r.status === 'na').length;
+
+    const statsY = infoY + infoBoxH + 6;
+    const statW = (W - 20) / 3;
+
+    const stats = [
+      { label: "Validés", val: okCount, color: [5, 150, 105], bg: [209, 250, 229] },
+      { label: "Non conformes", val: koCount, color: [220, 38, 38], bg: [254, 226, 226] },
+      { label: "Non applicable", val: naCount, color: [107, 114, 128], bg: [243, 244, 246] }
+    ];
+
+    stats.forEach((s, i) => {
+      const x = 10 + i * statW;
+      doc.setFillColor(s.bg[0], s.bg[1], s.bg[2]);
+      doc.roundedRect(x, statsY, statW - 2, 16, 2, 2, 'F');
+      doc.setTextColor(s.color[0], s.color[1], s.color[2]);
+      doc.setFontSize(16);
+      doc.setFont(undefined, 'bold');
+      doc.text(String(s.val), x + statW/2 - 2, statsY + 10, { align: 'center' });
+      doc.setFontSize(7);
+      doc.setFont(undefined, 'normal');
+      doc.text(s.label, x + statW/2 - 2, statsY + 15, { align: 'center' });
+    });
+
+    y = statsY + 24;
+
+    doc.setFillColor(15, 35, 90);
+    doc.rect(10, y, W - 20, 8, 'F');
+    doc.setTextColor(255);
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.text("DÉTAIL DES CONTRÔLES", 14, y + 5.5);
+    y += 13;
+
+    doc.setFontSize(8.5);
+
+    Object.keys(responses).forEach(key => {
+      const res = responses[key];
+      if (!res.status || res.status === 'na') return;
+      if (y > 272) { addFooter(doc, labo); doc.addPage(); y = 20; }
+
+      const isOk = res.status === 'ok';
+      const bgColor = isOk ? [240, 253, 244] : [254, 242, 242];
+      const textColor = isOk ? [5, 150, 105] : [220, 38, 38];
+
+      doc.setFillColor(bgColor[0], bgColor[1], bgColor[2]);
+      doc.roundedRect(10, y - 4, W - 20, 8, 1, 1, 'F');
+
+      doc.setFillColor(textColor[0], textColor[1], textColor[2]);
+      doc.roundedRect(12, y - 3, 10, 6, 1, 1, 'F');
+      doc.setTextColor(255);
+      doc.setFontSize(6.5);
+      doc.setFont(undefined, 'bold');
+      doc.text(isOk ? 'OK' : 'NOK', 17, y + 0.5, { align: 'center' });
+
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(8.5);
+      doc.setFont(undefined, 'normal');
+      doc.text(res.label, 26, y + 0.5);
+      y += 9;
+
+      if (res.comment && res.comment.trim()) {
+        if (y > 272) { addFooter(doc, labo); doc.addPage(); y = 20; }
+        doc.setTextColor(100, 100, 120);
+        doc.setFontSize(7.5);
+        doc.setFont(undefined, 'italic');
+        const lines = doc.splitTextToSize('> ' + res.comment.trim(), W - 40);
+        lines.forEach(line => {
+          doc.text(line, 30, y);
+          y += 5;
+        });
+        y += 1;
+      }
+    });
+  }
 
   const obs = document.getElementById('obs').value;
   if (obs && obs.trim()) {
@@ -795,8 +999,12 @@ async function generatePDF() {
   // Le stock n'est déduit qu'une seule fois par rapport : un ré-export du même rapport ne redéduit pas.
   if (!stockDeducted) {
     try {
-      const stockResult = await deduireStockDolibarr(rapportNum, document.getElementById('modele').value);
-      if (stockResult && stockResult.results) {
+      const stockResult = reportType === 'correctif'
+        ? await deduireStockCorrectif(rapportNum)
+        : await deduireStockDolibarr(rapportNum, document.getElementById('modele').value);
+      if (stockResult && stockResult.error) {
+        alert('⚠️ Rapport PDF généré, mais la déduction du stock Dolibarr a échoué : ' + stockResult.message);
+      } else if (stockResult && stockResult.results) {
         stockDeducted = true;
         const failed = stockResult.results.filter(r => !r.ok);
         if (failed.length) {
@@ -812,7 +1020,7 @@ async function generatePDF() {
   saveToHistory(rapportNum, labo, tech, dateStr);
   autoSave();
 
-  const filename = `${rapportNum}_Maintenance_VHF_${labo.replace(/\s/g, '_')}.pdf`;
+  const filename = `${rapportNum}_${reportType === 'correctif' ? 'Correctif' : 'Maintenance_VHF'}_${labo.replace(/\s/g, '_')}.pdf`;
   if (navigator.share && navigator.canShare) {
     try {
       const blob = doc.output('blob');
@@ -858,6 +1066,10 @@ function saveToHistory(num, client, tech, date) {
     modele: document.getElementById('modele').value || '',
     obs: document.getElementById('obs').value || '',
     stockDeducted,
+    reportType,
+    correctifPanne: document.getElementById('correctifPanne').value || '',
+    correctifIntervention: document.getElementById('correctifIntervention').value || '',
+    correctifParts: JSON.parse(JSON.stringify(correctifParts)),
     responses: JSON.parse(JSON.stringify(responses)),
     comments: {}
   };
@@ -881,12 +1093,16 @@ function renderHistory() {
   container.innerHTML = history.map((r, idx) => `
     <div class="hist-item">
       <div style="flex:1">
-        <div class="hist-num">${r.num}</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div class="hist-num">${r.num}</div>
+          <span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;${r.reportType === 'correctif' ? 'background:#ffedd5;color:#c2410c;' : 'background:var(--blue-light);color:var(--blue);'}">${r.reportType === 'correctif' ? '⚡ Correctif' : '🔧 Révision'}</span>
+        </div>
         <div class="hist-client">${r.client}</div>
         <div class="hist-meta">👤 ${r.tech || '-'} &nbsp;|&nbsp; 📅 ${r.date}</div>
         <div style="display:flex;gap:6px;margin-top:5px">
-          <span class="hist-badge-ok">✔ ${r.ok} OK</span>
-          <span class="hist-badge-ko">✘ ${r.ko} NOK</span>
+          ${r.reportType === 'correctif'
+            ? `<span class="hist-badge-ok">🔩 ${(r.correctifParts || []).length} pièce(s)</span>`
+            : `<span class="hist-badge-ok">✔ ${r.ok} OK</span><span class="hist-badge-ko">✘ ${r.ko} NOK</span>`}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-left:10px">
@@ -914,6 +1130,12 @@ Les données actuelles seront remplacées.`)) return;
   stockDeducted = !!r.stockDeducted;
   refreshPartsVisibility();
   document.getElementById('obs').value = r.obs || '';
+
+  setReportType(r.reportType || 'revision');
+  document.getElementById('correctifPanne').value = r.correctifPanne || '';
+  document.getElementById('correctifIntervention').value = r.correctifIntervention || '';
+  correctifParts = JSON.parse(JSON.stringify(r.correctifParts || []));
+  renderCorrectifPartsList();
 
   responses = JSON.parse(JSON.stringify(r.responses || {}));
   Object.keys(responses).forEach(id => {
@@ -969,6 +1191,10 @@ function autoSave() {
     obs: document.getElementById('obs').value,
     rapportNum: document.getElementById('rapportNum').value,
     stockDeducted,
+    reportType,
+    correctifPanne: document.getElementById('correctifPanne').value,
+    correctifIntervention: document.getElementById('correctifIntervention').value,
+    correctifParts: JSON.parse(JSON.stringify(correctifParts)),
     responses: JSON.parse(JSON.stringify(responses))
   };
   localStorage.setItem('evona_draft', JSON.stringify(draft));
@@ -985,6 +1211,11 @@ function loadDraft() {
   stockDeducted = !!draft.stockDeducted;
   refreshPartsVisibility();
   document.getElementById('obs').value = draft.obs || '';
+  setReportType(draft.reportType || 'revision');
+  document.getElementById('correctifPanne').value = draft.correctifPanne || '';
+  document.getElementById('correctifIntervention').value = draft.correctifIntervention || '';
+  correctifParts = JSON.parse(JSON.stringify(draft.correctifParts || []));
+  renderCorrectifPartsList();
   if (draft.rapportNum) document.getElementById('rapportNum').value = draft.rapportNum;
   if (draft.responses) {
     responses = draft.responses;
@@ -1017,13 +1248,17 @@ function newReport() {
   responses = {};
   photos = [];
   stockDeducted = false;
+  correctifParts = [];
   document.getElementById('rapportNum').value = generateRapportNum();
-  ['labo','tech','sn','broche','modele','obs'].forEach(id => document.getElementById(id).value = '');
+  ['labo','tech','sn','broche','modele','obs','correctifPanne','correctifIntervention'].forEach(id => document.getElementById(id).value = '');
   document.querySelectorAll('.cl-item').forEach(el => el.className = 'cl-item');
   document.querySelectorAll('.btn-status').forEach(btn => btn.className = 'btn-status');
   document.querySelectorAll('.cl-comment input').forEach(inp => inp.value = '');
   document.querySelectorAll('.cl-qty input').forEach(inp => inp.value = '1');
   refreshPartsVisibility();
+  document.getElementById('correctifSearchResults').innerHTML = '';
+  renderCorrectifPartsList();
+  setReportType('revision');
   document.getElementById('photoGrid').innerHTML = '<label class="photo-box" for="camInput"><span class="photo-add">+</span></label>';
   showPage('info');
 }
