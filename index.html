@@ -59,6 +59,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
 .cl-comment { margin-top: 10px; display: none; }
 .cl-item.has-action .cl-comment { display: block; }
 .cl-comment input { width: 100%; padding: 7px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; background: rgba(255,255,255,0.7); }
+.cl-qty { margin-top: 8px; display: none; align-items: center; gap: 8px; }
+.cl-item.ok.has-part .cl-qty { display: flex; }
+.cl-qty label { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.cl-qty input { width: 70px; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; background: rgba(255,255,255,0.7); }
 
 .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .photo-box { aspect-ratio: 1; border: 2px dashed #ccc; border-radius: 8px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
@@ -119,6 +123,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-s
       </div>
       <div class="field"><label>Laboratoire</label><input type="text" id="labo" placeholder="Nom du labo"></div>
       <div class="field"><label>Technicien</label><input type="text" id="tech" placeholder="Nom du technicien"></div>
+      <div class="field">
+        <label>Modèle de machine</label>
+        <select id="modele" style="padding:10px; border:1px solid var(--gray-border); border-radius:6px; font-size:14px; outline:none; background:white;">
+          <option value="">-- Sélectionner --</option>
+        </select>
+      </div>
       <div class="field"><label>N° de Série Machine</label><input type="text" id="sn" placeholder="Ex: VHF-0000"></div>
       <div class="field"><label>Heure de fonctionnement broche</label><input type="text" id="broche" placeholder="Ex: 1250 h"></div>
     </div>
@@ -168,12 +178,81 @@ const checklistData = [
   { s: "8. FINS DE COURSE", i: ["Test de fonctionnement OK"] },
   { s: "🧼 NETTOYAGE", i: ["Chambre de travail", "Tiroir multi-usage", "Vitre de chambre", "Webcam", "Griffe", "Plaque de buse", "Support de disque"] },
   { s: "🔧 CONTRÔLE INTERNE", i: ["Câbles & tuyaux internes OK", "Soufflet axe Z fluide", "Soufflets axes X & Y fluides", "Juppe : Bon état"] },
-  { s: "🔄 PIÈCES D'USURE / GRAISSAGE", i: ["Filtre air remplacé", "Inserts magasin remplacés", "Fins de courses remplacés", "Machine graissée (Vis à billes)", "Griffe graissée"] },
+  { s: "🔄 PIÈCES D'USURE / GRAISSAGE", i: [
+      { label: "Filtre air remplacé", parts: [{ key: "filtre_air", label: "Filtre air" }] },
+      { label: "Inserts magasin remplacés", parts: [{ key: "inserts_magasin_1", label: "Insert magasin (1)" }, { key: "inserts_magasin_2", label: "Insert magasin (2)" }] },
+      { label: "Fins de courses remplacés", parts: [{ key: "fin_de_course", label: "Fins de course" }] },
+      "Machine graissée (Vis à billes)",
+      "Griffe graissée"
+    ] },
   { s: "💿 CHARGEUR DISQUE", i: ["Nettoyage des clamps", "Fonctionnement trappe", "Nettoyage plaque rehaussement", "Test complet chargeur"] },
-  { s: "❄️ REFROIDISSEMENT", i: ["Absence de fuite", "Nettoyage circuit", "Débit correct buses", "Remplacement filtre", "Remplacement charbon actif"] },
-  { s: "🎯 PRÉCISION & TEST FINAL", i: ["Calibration du palpeur", "Outils recalibrés", "Machine calibrée", "Pièce test usinée OK", "Logiciel remis en mode utilisateur"] },
+  { s: "❄️ REFROIDISSEMENT", i: [
+      "Absence de fuite",
+      { label: "Nettoyage circuit", parts: [{ key: "tec_powder", label: "Tec Powder" }] },
+      "Débit correct buses",
+      { label: "Remplacement filtre", parts: [{ key: "filtre_refroidissement", label: "Filtre réservoir/circuit d'eau" }] },
+      { label: "Remplacement charbon actif", parts: [{ key: "charbon_actif", label: "Charbon actif" }] }
+    ] },
+  { s: "🎯 PRÉCISION & TEST FINAL", i: [
+      "Calibration du palpeur", "Outils recalibrés",
+      { label: "Machine calibrée", parts: [{ key: "disque_calibration", label: "Disque/bloc de calibration" }] },
+      "Pièce test usinée OK", "Logiciel remis en mode utilisateur"
+    ] },
   { s: "🔁 REMISE À 0 ENTRETIEN", i: ["Remise à 0 entretien machine effectuée"] }
 ];
+
+// Modèles de machines disponibles
+const MACHINE_MODELES = ["E4", "E5", "K4", "K5", "S1", "S2", "S5", "R5", "N4"];
+
+// Référence Dolibarr (champ "Réf." produit) de chaque pièce consommable, par modèle de machine.
+// Les clés (filtre_air, inserts_magasin, ...) correspondent aux "key" des "parts" tagués dans checklistData ci-dessus.
+// La quantité consommée, elle, est saisie par le technicien directement dans l'app (pas ici).
+const PARTS_CONFIG_BASE = {
+  filtre_air:              "",
+  inserts_magasin_1:       "",
+  inserts_magasin_2:       "",
+  fin_de_course:           "",
+  filtre_refroidissement:  "",
+  charbon_actif:           "",
+  disque_calibration:      "",
+  tec_powder:              ""
+};
+
+// ⚠️ À COMPLÉTER : ajoute ici les références connues pour chaque modèle (celles non listées restent vides).
+const SAME_AS_S1 = { inserts_magasin_1: "VHF231256", fin_de_course: "VHFSWITCH", disque_calibration: "VHF232477" };
+const PARTS_CONFIG_OVERRIDES = {
+  S1: SAME_AS_S1,
+  S2: SAME_AS_S1,
+  S5: SAME_AS_S1,
+  K5: SAME_AS_S1,
+  R5: { inserts_magasin_1: "VHF240280", fin_de_course: "VHFSWITCH", disque_calibration: "VHF232477" },
+  E5: { inserts_magasin_1: "VHF240280", inserts_magasin_2: "VHF246727", fin_de_course: "VHFSWITCH", disque_calibration: "VHF232477" },
+  E4: {
+    inserts_magasin_1:      "VHF246727",
+    inserts_magasin_2:      "VHF240209",
+    fin_de_course:          "VHFSWITCH",
+    tec_powder:             "VHF255457",
+    filtre_refroidissement: "VHF263801"
+  },
+  K4: { inserts_magasin_1: "VHF246726", fin_de_course: "VHFSWITCH", disque_calibration: "VHF232477" },
+  N4: {
+    inserts_magasin_1:      "VHF231256",
+    fin_de_course:          "VHFSWITCH",
+    disque_calibration:     "VHF233787",
+    tec_powder:             "VHF255457",
+    filtre_refroidissement: "VHF252541"
+  }
+};
+
+const PARTS_CONFIG = Object.fromEntries(MACHINE_MODELES.map(m =>
+  [m, { ...PARTS_CONFIG_BASE, ...(PARTS_CONFIG_OVERRIDES[m] || {}) }]
+));
+
+// Proxy sécurisé vers Dolibarr, déployé sur le VPS IONOS (dossier evona-proxy à côté de Dolibarr)
+const PROXY_CONFIG = {
+  url: "https://erp.evonaservice.fr/evona-proxy/dolibarr-proxy.php",
+  token: "56d27e04b4e84023e0706af26b975499da22600a95ff258c811785bab3589d17"
+};
 
 let responses = {};
 let photos = [];
@@ -211,23 +290,41 @@ function generateRapportNum() {
   return `EVN-${yy}${mm}${dd}-${hh}${min}`;
 }
 
+// id -> [{key, label}] pour les items liés à une ou plusieurs pièces consommables
+const ITEM_PARTS = {};
+
 function init() {
   document.getElementById('rapportNum').value = generateRapportNum();
+  const modeleSelect = document.getElementById('modele');
+  MACHINE_MODELES.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m; opt.innerText = m;
+    modeleSelect.appendChild(opt);
+  });
   ['labo','tech','sn','broche','obs'].forEach(id => {
     document.getElementById(id).addEventListener('input', autoSave);
   });
+  modeleSelect.addEventListener('change', () => { refreshPartsVisibility(); autoSave(); });
   const container = document.getElementById('checklistContainer');
   checklistData.forEach((sec, sIdx) => {
     const hdr = document.createElement('div');
     hdr.className = 'section-hdr'; hdr.innerText = sec.s;
     container.appendChild(hdr);
     sec.i.forEach((item, iIdx) => {
+      const label = typeof item === 'string' ? item : item.label;
+      const parts = (typeof item === 'object' && item.parts) ? item.parts : [];
       const id = `r-${sIdx}-${iIdx}`;
+      if (parts.length) ITEM_PARTS[id] = parts;
       const div = document.createElement('div');
-      div.className = 'cl-item'; div.id = `card-${id}`;
+      div.className = 'cl-item' + (parts.length ? ' has-part' : ''); div.id = `card-${id}`;
+      const qtyRows = parts.map(p => `
+        <div class="cl-qty" id="qtyrow-${id}-${p.key}">
+          <label>Qté ${p.label} :</label>
+          <input type="number" id="qty-${id}-${p.key}" min="1" step="1" value="1" onchange="saveQty('${id}','${p.key}', this.value)">
+        </div>`).join('');
       div.innerHTML = `
         <div class="cl-row">
-          <span class="cl-label">${item}</span>
+          <span class="cl-label">${label}</span>
           <div class="btn-grp">
             <button class="btn-status" id="ok-${id}" onclick="setStat('${id}','ok')">OK</button>
             <button class="btn-status" id="ko-${id}" onclick="setStat('${id}','ko')">NOK</button>
@@ -236,16 +333,33 @@ function init() {
         </div>
         <div class="cl-comment">
           <input type="text" id="comm-${id}" placeholder="Note ou précision..." onchange="saveComm('${id}', this.value)">
-        </div>`;
+        </div>
+        ${qtyRows}`;
       container.appendChild(div);
+    });
+  });
+  refreshPartsVisibility();
+}
+
+// N'affiche le champ "Qté" d'une pièce que si une référence Dolibarr existe pour le modèle sélectionné
+function refreshPartsVisibility() {
+  const modele = document.getElementById('modele').value;
+  const cfg = PARTS_CONFIG[modele] || {};
+  Object.keys(ITEM_PARTS).forEach(id => {
+    ITEM_PARTS[id].forEach(p => {
+      const row = document.getElementById(`qtyrow-${id}-${p.key}`);
+      if (row) row.style.display = cfg[p.key] ? '' : 'none';
     });
   });
 }
 
 function setStat(id, stat) {
-  responses[id] = responses[id] || { label: document.querySelector(`#card-${id} .cl-label`).innerText };
+  const card = document.getElementById(`card-${id}`);
+  const parts = ITEM_PARTS[id] || [];
+  responses[id] = responses[id] || { label: card.querySelector('.cl-label').innerText, parts: parts.map(p => p.key), qtys: {} };
   responses[id].status = stat;
-  document.getElementById(`card-${id}`).className = 'cl-item has-action ' + stat;
+  parts.forEach(p => { if (!responses[id].qtys[p.key]) responses[id].qtys[p.key] = 1; });
+  card.className = 'cl-item has-action ' + stat + (parts.length ? ' has-part' : '');
   document.getElementById(`ok-${id}`).className = 'btn-status' + (stat==='ok'?' active-ok':'');
   document.getElementById(`ko-${id}`).className = 'btn-status' + (stat==='ko'?' active-ko':'');
   document.getElementById(`na-${id}`).className = 'btn-status' + (stat==='na'?' active-na':'');
@@ -253,6 +367,7 @@ function setStat(id, stat) {
 }
 
 function saveComm(id, val) { responses[id].comment = val; autoSave(); }
+function saveQty(id, partKey, val) { responses[id].qtys[partKey] = parseInt(val, 10) || 1; autoSave(); }
 
 function showPage(p) {
   document.querySelectorAll('.page').forEach(pg => pg.classList.remove('active'));
@@ -287,6 +402,43 @@ function removePhoto(btn) {
   box.remove();
 }
 
+// Collecte les pièces marquées "remplacées" (OK) dont le modèle sélectionné a une référence Dolibarr configurée
+function collectConsumedParts(modele) {
+  const cfg = PARTS_CONFIG[modele] || {};
+  const parts = [];
+  Object.keys(responses).forEach(id => {
+    const r = responses[id];
+    if (r.status === 'ok' && r.parts && r.parts.length) {
+      r.parts.forEach(partKey => {
+        const ref = cfg[partKey];
+        const qty = (r.qtys && r.qtys[partKey]) || 1;
+        if (ref) {
+          parts.push({ key: partKey, ref, qty, label: r.label });
+        } else {
+          console.warn(`Pièce "${partKey}" remplacée mais aucune référence Dolibarr configurée pour le modèle ${modele}`);
+        }
+      });
+    }
+  });
+  return parts;
+}
+
+// Envoie la liste des pièces consommées au proxy Dolibarr pour déduire le stock
+async function deduireStockDolibarr(rapportNum, modele) {
+  if (!modele) return { skipped: true, reason: 'no_model' };
+  if (!PROXY_CONFIG.url) return { skipped: true, reason: 'no_proxy_configured' };
+  const parts = collectConsumedParts(modele);
+  if (parts.length === 0) return { skipped: true, reason: 'no_parts' };
+
+  const res = await fetch(PROXY_CONFIG.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-App-Token': PROXY_CONFIG.token },
+    body: JSON.stringify({ rapport: rapportNum, modele, parts })
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 async function generatePDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compression: true });
@@ -304,6 +456,7 @@ async function generatePDF() {
   const tech = document.getElementById('tech').value || "-";
   const sn = document.getElementById('sn').value || "-";
   const broche = document.getElementById('broche').value || "-";
+  const modele = document.getElementById('modele').value || "-";
   const rapportNum = document.getElementById('rapportNum').value || generateRapportNum();
   const dateStr = new Date().toLocaleDateString('fr-FR');
   const W = 210;
@@ -337,10 +490,11 @@ async function generatePDF() {
   doc.text(`N° ${rapportNum}`, 40, 11.5, { align: 'center' });
 
   const infoY = 62;
+  const infoBoxH = 46;
   doc.setFillColor(245, 248, 252);
-  doc.roundedRect(10, infoY, W - 20, 38, 3, 3, 'F');
+  doc.roundedRect(10, infoY, W - 20, infoBoxH, 3, 3, 'F');
   doc.setDrawColor(191, 219, 254);
-  doc.roundedRect(10, infoY, W - 20, 38, 3, 3, 'S');
+  doc.roundedRect(10, infoY, W - 20, infoBoxH, 3, 3, 'S');
 
   doc.setFillColor(15, 35, 90);
   doc.roundedRect(10, infoY, 60, 7, 2, 2, 'F');
@@ -350,6 +504,7 @@ async function generatePDF() {
   doc.text("INFORMATIONS INTERVENTION", 14, infoY + 5);
 
   const fields = [
+    ["Modèle machine", modele],
     ["Laboratoire", labo],
     ["Technicien", tech],
     ["N° de Série", sn],
@@ -372,7 +527,7 @@ async function generatePDF() {
   const koCount = Object.values(responses).filter(r => r.status === 'ko').length;
   const naCount = Object.values(responses).filter(r => r.status === 'na').length;
 
-  const statsY = infoY + 44;
+  const statsY = infoY + infoBoxH + 6;
   const statW = (W - 20) / 3;
 
   const stats = [
@@ -496,6 +651,19 @@ async function generatePDF() {
 
   saveToHistory(rapportNum, labo, tech, dateStr);
 
+  try {
+    const stockResult = await deduireStockDolibarr(rapportNum, document.getElementById('modele').value);
+    if (stockResult && stockResult.results) {
+      const failed = stockResult.results.filter(r => !r.ok);
+      if (failed.length) {
+        alert('⚠️ Rapport PDF généré, mais certaines pièces n\'ont pas pu être déduites du stock Dolibarr :\n' + failed.map(f => `- ${f.ref} : ${f.message}`).join('\n'));
+      }
+    }
+  } catch(e) {
+    console.error('Erreur déduction stock Dolibarr:', e);
+    alert('⚠️ Rapport PDF généré, mais la déduction du stock Dolibarr a échoué (connexion au serveur impossible). Pense à ajuster le stock manuellement si besoin.');
+  }
+
   const filename = `${rapportNum}_Maintenance_VHF_${labo.replace(/\s/g, '_')}.pdf`;
   if (navigator.share && navigator.canShare) {
     try {
@@ -539,6 +707,7 @@ function saveToHistory(num, client, tech, date) {
     ko: koCount,
     sn: document.getElementById('sn').value || '',
     broche: document.getElementById('broche').value || '',
+    modele: document.getElementById('modele').value || '',
     obs: document.getElementById('obs').value || '',
     responses: JSON.parse(JSON.stringify(responses)),
     comments: {}
@@ -592,15 +761,18 @@ Les données actuelles seront remplacées.`)) return;
   document.getElementById('tech').value = r.tech || '';
   document.getElementById('sn').value = r.sn || '';
   document.getElementById('broche').value = r.broche || '';
+  document.getElementById('modele').value = r.modele || '';
+  refreshPartsVisibility();
   document.getElementById('obs').value = r.obs || '';
 
   responses = JSON.parse(JSON.stringify(r.responses || {}));
   Object.keys(responses).forEach(id => {
     const stat = responses[id].status;
+    const itemParts = ITEM_PARTS[id] || [];
     if (stat) {
       const card = document.getElementById('card-' + id);
       if (card) {
-        card.className = 'cl-item has-action ' + stat;
+        card.className = 'cl-item has-action ' + stat + (itemParts.length ? ' has-part' : '');
         ['ok','ko','na'].forEach(s => {
           const btn = document.getElementById(s + '-' + id);
           if (btn) btn.className = 'btn-status' + (stat === s ? ' active-' + s : '');
@@ -611,6 +783,11 @@ Les données actuelles seront remplacées.`)) return;
     const el = document.getElementById('comm-' + id);
     if (el) el.value = cmt;
     if (responses[id]) responses[id].comment = cmt;
+    itemParts.forEach(p => {
+      const qtyEl = document.getElementById(`qty-${id}-${p.key}`);
+      const qty = responses[id] && responses[id].qtys && responses[id].qtys[p.key];
+      if (qtyEl && qty) qtyEl.value = qty;
+    });
   });
 
   showPage('info');
@@ -638,6 +815,7 @@ function autoSave() {
     tech: document.getElementById('tech').value,
     sn: document.getElementById('sn').value,
     broche: document.getElementById('broche').value,
+    modele: document.getElementById('modele').value,
     obs: document.getElementById('obs').value,
     rapportNum: document.getElementById('rapportNum').value,
     responses: JSON.parse(JSON.stringify(responses))
@@ -652,6 +830,8 @@ function loadDraft() {
   document.getElementById('tech').value = draft.tech || '';
   document.getElementById('sn').value = draft.sn || '';
   document.getElementById('broche').value = draft.broche || '';
+  document.getElementById('modele').value = draft.modele || '';
+  refreshPartsVisibility();
   document.getElementById('obs').value = draft.obs || '';
   if (draft.rapportNum) document.getElementById('rapportNum').value = draft.rapportNum;
   if (draft.responses) {
@@ -660,8 +840,9 @@ function loadDraft() {
       const stat = responses[id].status;
       if (!stat) return;
       const card = document.getElementById('card-' + id);
+      const itemParts = ITEM_PARTS[id] || [];
       if (card) {
-        card.className = 'cl-item has-action ' + stat;
+        card.className = 'cl-item has-action ' + stat + (itemParts.length ? ' has-part' : '');
         ['ok','ko','na'].forEach(s => {
           const btn = document.getElementById(s + '-' + id);
           if (btn) btn.className = 'btn-status' + (stat === s ? ' active-' + s : '');
@@ -669,6 +850,11 @@ function loadDraft() {
       }
       const el = document.getElementById('comm-' + id);
       if (el && responses[id].comment) el.value = responses[id].comment;
+      itemParts.forEach(p => {
+        const qtyEl = document.getElementById(`qty-${id}-${p.key}`);
+        const qty = responses[id].qtys && responses[id].qtys[p.key];
+        if (qtyEl && qty) qtyEl.value = qty;
+      });
     });
   }
 }
@@ -679,10 +865,12 @@ function newReport() {
   responses = {};
   photos = [];
   document.getElementById('rapportNum').value = generateRapportNum();
-  ['labo','tech','sn','broche','obs'].forEach(id => document.getElementById(id).value = '');
+  ['labo','tech','sn','broche','modele','obs'].forEach(id => document.getElementById(id).value = '');
   document.querySelectorAll('.cl-item').forEach(el => el.className = 'cl-item');
   document.querySelectorAll('.btn-status').forEach(btn => btn.className = 'btn-status');
   document.querySelectorAll('.cl-comment input').forEach(inp => inp.value = '');
+  document.querySelectorAll('.cl-qty input').forEach(inp => inp.value = '1');
+  refreshPartsVisibility();
   document.getElementById('photoGrid').innerHTML = '<label class="photo-box" for="camInput"><span class="photo-add">+</span></label>';
   showPage('info');
 }
