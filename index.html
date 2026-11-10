@@ -1056,6 +1056,9 @@ window.addEventListener('appinstalled', () => {
 
 init();
 loadDraft();
+
+// Lien direct depuis le hub Evona (ex: index.html#stock ouvre directement l'onglet Stock)
+if (location.hash === '#stock') showPage('stock');
 </script>
 <script>
 if ('serviceWorker' in navigator) {
