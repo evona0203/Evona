@@ -256,6 +256,7 @@ const PROXY_CONFIG = {
 
 let responses = {};
 let photos = [];
+let stockDeducted = false; // true une fois le stock Dolibarr déduit pour le rapport en cours (évite une double déduction si on réexporte le PDF)
 
 function normalizeImageForPDF(dataUrl) {
   return new Promise((resolve, reject) => {
@@ -649,20 +650,25 @@ async function generatePDF() {
     addFooter(doc, labo);
   }
 
-  saveToHistory(rapportNum, labo, tech, dateStr);
-
-  try {
-    const stockResult = await deduireStockDolibarr(rapportNum, document.getElementById('modele').value);
-    if (stockResult && stockResult.results) {
-      const failed = stockResult.results.filter(r => !r.ok);
-      if (failed.length) {
-        alert('⚠️ Rapport PDF généré, mais certaines pièces n\'ont pas pu être déduites du stock Dolibarr :\n' + failed.map(f => `- ${f.ref} : ${f.message}`).join('\n'));
+  // Le stock n'est déduit qu'une seule fois par rapport : un ré-export du même rapport ne redéduit pas.
+  if (!stockDeducted) {
+    try {
+      const stockResult = await deduireStockDolibarr(rapportNum, document.getElementById('modele').value);
+      if (stockResult && stockResult.results) {
+        stockDeducted = true;
+        const failed = stockResult.results.filter(r => !r.ok);
+        if (failed.length) {
+          alert('⚠️ Rapport PDF généré, mais certaines pièces n\'ont pas pu être déduites du stock Dolibarr :\n' + failed.map(f => `- ${f.ref} : ${f.message}`).join('\n'));
+        }
       }
+    } catch(e) {
+      console.error('Erreur déduction stock Dolibarr:', e);
+      alert('⚠️ Rapport PDF généré, mais la déduction du stock Dolibarr a échoué (connexion au serveur impossible). Pense à ajuster le stock manuellement si besoin.');
     }
-  } catch(e) {
-    console.error('Erreur déduction stock Dolibarr:', e);
-    alert('⚠️ Rapport PDF généré, mais la déduction du stock Dolibarr a échoué (connexion au serveur impossible). Pense à ajuster le stock manuellement si besoin.');
   }
+
+  saveToHistory(rapportNum, labo, tech, dateStr);
+  autoSave();
 
   const filename = `${rapportNum}_Maintenance_VHF_${labo.replace(/\s/g, '_')}.pdf`;
   if (navigator.share && navigator.canShare) {
@@ -709,6 +715,7 @@ function saveToHistory(num, client, tech, date) {
     broche: document.getElementById('broche').value || '',
     modele: document.getElementById('modele').value || '',
     obs: document.getElementById('obs').value || '',
+    stockDeducted,
     responses: JSON.parse(JSON.stringify(responses)),
     comments: {}
   };
@@ -762,6 +769,7 @@ Les données actuelles seront remplacées.`)) return;
   document.getElementById('sn').value = r.sn || '';
   document.getElementById('broche').value = r.broche || '';
   document.getElementById('modele').value = r.modele || '';
+  stockDeducted = !!r.stockDeducted;
   refreshPartsVisibility();
   document.getElementById('obs').value = r.obs || '';
 
@@ -818,6 +826,7 @@ function autoSave() {
     modele: document.getElementById('modele').value,
     obs: document.getElementById('obs').value,
     rapportNum: document.getElementById('rapportNum').value,
+    stockDeducted,
     responses: JSON.parse(JSON.stringify(responses))
   };
   localStorage.setItem('evona_draft', JSON.stringify(draft));
@@ -831,6 +840,7 @@ function loadDraft() {
   document.getElementById('sn').value = draft.sn || '';
   document.getElementById('broche').value = draft.broche || '';
   document.getElementById('modele').value = draft.modele || '';
+  stockDeducted = !!draft.stockDeducted;
   refreshPartsVisibility();
   document.getElementById('obs').value = draft.obs || '';
   if (draft.rapportNum) document.getElementById('rapportNum').value = draft.rapportNum;
@@ -864,6 +874,7 @@ function newReport() {
   localStorage.removeItem('evona_draft');
   responses = {};
   photos = [];
+  stockDeducted = false;
   document.getElementById('rapportNum').value = generateRapportNum();
   ['labo','tech','sn','broche','modele','obs'].forEach(id => document.getElementById(id).value = '');
   document.querySelectorAll('.cl-item').forEach(el => el.className = 'cl-item');
